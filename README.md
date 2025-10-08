@@ -33,5 +33,5 @@
 
 ### 1️⃣ Clone or Download
 ```bash
-git clone https://github.com/yourusername/nexax-ai.git
+git clone https://raw.githubusercontent.com/dhruvpatil1215/-Nexus-AI/index.html
 cd nexax-ai
