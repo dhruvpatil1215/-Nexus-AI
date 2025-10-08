@@ -754,6 +754,18 @@
       0%, 80%, 100% { opacity: 0; }
       40% { opacity: 1; }
     }
+
+    .incomplete-code-warning {
+      background: var(--warning);
+      color: white;
+      padding: 8px 12px;
+      border-radius: var(--radius);
+      margin: 8px 0;
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
   </style>
 </head>
 <body>
@@ -835,7 +847,7 @@
               <div class="feature-desc">Professional emails, documents, and more</div>
             </div>
             
-            <div class="feature-card" data-prompt="Write a Python function to calculate factorial with error handling">
+            <div class="feature-card" data-prompt="Write a complete Python function to calculate factorial with proper error handling and documentation">
               <div class="feature-icon">
                 <i class="fas fa-code"></i>
               </div>
@@ -1003,25 +1015,39 @@
 
       try {
         const ai = new GoogleGenerativeAI(API_KEY);
-        const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = ai.getGenerativeModel({ 
+          model: "gemini-2.5-flash",
+          generationConfig: {
+            maxOutputTokens: 4000, // Increased for longer code responses
+            temperature: 0.7,
+          },
+        });
         
         // Build conversation history
         const chat = chats.find(c => c.id === currentChat);
-        const history = chat.messages.slice(-10).map(m => ({
+        const history = chat.messages.slice(-6).map(m => ({
           role: m.role === "user" ? "user" : "model",
           parts: [{ text: m.text }]
         }));
 
+        // Enhanced prompt for code generation
+        let enhancedPrompt = text;
+        if (text.toLowerCase().includes('code') || text.toLowerCase().includes('function') || 
+            text.toLowerCase().includes('program') || text.toLowerCase().includes('write')) {
+          enhancedPrompt = `${text}
+
+Please provide complete, working code with proper formatting. If the response is long, make sure to include all necessary parts and avoid truncation.`;
+        }
+
         const chatSession = model.startChat({
           history: history,
-          generationConfig: {
-            maxOutputTokens: 2000,
-            temperature: 0.7,
-          },
         });
 
-        const result = await chatSession.sendMessage(text);
-        const response = result.response.text();
+        const result = await chatSession.sendMessage(enhancedPrompt);
+        let response = result.response.text();
+        
+        // Check for incomplete code blocks and try to fix them
+        response = fixIncompleteCode(response);
         
         hideTyping();
         addMessage("bot", response, true);
@@ -1038,6 +1064,8 @@
           errorMessage = "API quota exceeded. Please try again later.";
         } else if (error.message.includes("safety")) {
           errorMessage = "Response blocked for safety reasons. Please rephrase your question.";
+        } else if (error.message.includes("incomplete")) {
+          errorMessage = "The response was cut off. Please try asking for a shorter response or break your question into parts.";
         }
         
         addMessage("bot", errorMessage, true);
@@ -1049,6 +1077,60 @@
         elements.userInput.style.height = 'auto';
         elements.userInput.focus();
       }
+    }
+
+    function fixIncompleteCode(text) {
+      // Check for common incomplete code patterns and try to fix them
+      const codeBlockRegex = /```[\s\S]*?```/g;
+      const matches = text.match(codeBlockRegex);
+      
+      if (!matches) return text;
+      
+      let fixedText = text;
+      
+      matches.forEach(match => {
+        // Check if code block is properly closed
+        const lines = match.split('\n');
+        const firstLine = lines[0];
+        const lastLine = lines[lines.length - 1];
+        
+        // If code block doesn't end properly, try to fix it
+        if (!lastLine.trim().startsWith('```') && match.includes('```')) {
+          // Count opening and closing backticks
+          const openingTicks = (match.match(/```/g) || []).length;
+          
+          if (openingTicks % 2 !== 0) {
+            // Unclosed code block - add closing backticks
+            fixedText = fixedText.replace(match, match + '\n```');
+            
+            // Add warning about incomplete code
+            if (!fixedText.includes('⚠️')) {
+              fixedText += '\n\n<div class="incomplete-code-warning">⚠️ <strong>Note:</strong> The code response was cut off. You may need to ask for the complete implementation.</div>';
+            }
+          }
+        }
+        
+        // Check for common incomplete patterns in code
+        const commonIncompletePatterns = [
+          /def\s+\w+\([^)]*\):\s*$/,
+          /function\s+\w+\([^)]*\)\s*{\s*$/,
+          /class\s+\w+.*:\s*$/,
+          /if\s*\(.*\)\s*{\s*$/,
+          /for\s*\(.*\)\s*{\s*$/,
+          /while\s*\(.*\)\s*{\s*$/
+        ];
+        
+        const lastCodeLine = lines[lines.length - 2] || ''; // Last line before closing ```
+        commonIncompletePatterns.forEach(pattern => {
+          if (pattern.test(lastCodeLine.trim())) {
+            if (!fixedText.includes('⚠️')) {
+              fixedText += '\n\n<div class="incomplete-code-warning">⚠️ <strong>Note:</strong> The code appears to be incomplete. You may need to ask for the complete implementation.</div>';
+            }
+          }
+        });
+      });
+      
+      return fixedText;
     }
 
     function addMessage(role, text, isBot = false) {
@@ -1242,7 +1324,7 @@
         <div class="message-content">
           <div class="message-bubble">
             <div class="typing-indicator">
-              <span>Thinking</span>
+              <span>Generating response</span>
               <div class="typing-dot"></div>
               <div class="typing-dot"></div>
               <div class="typing-dot"></div>
@@ -1302,7 +1384,7 @@
       event.target.value = '';
     }
 
-    console.log('Nexus AI Chatbot initialized - Normal Mode');
+    console.log('Nexus AI Chatbot initialized - Enhanced Code Generation');
   </script>
 </body>
 </html>
